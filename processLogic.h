@@ -6,25 +6,16 @@
 #define MMAP(ptr) {(ptr) = mmap(NULL, sizeof(*(ptr)), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, 0, 0);}
 #define UNMAP(ptr){munmap((ptr), sizeof((ptr)));}
 
-
-extern int *A;
-extern int *OQue;
-extern int *HQue;
-extern int *OFinished;
-extern int *HFinished;
-
-extern int *moleculeNumber;
-
-extern int TB_global;   // Global TB value to make it easier to pass to bond
-
-extern FILE *out;
-
-// Que semaphors
-extern sem_t *HQueSem;
-extern sem_t *OQueSem;
-extern sem_t *barrier;
-extern sem_t *mutex;
-extern sem_t *creating; 
+/**
+ * @brief Struct for input arguments
+ * 
+ */
+typedef struct params_t {
+    int NO;
+    int NH;
+    int TI;
+    int TB;
+} params_t;
 
 /**
  * @brief Halts process for random amount of time in <0,max> interval
@@ -39,7 +30,7 @@ void mysleep(int max);
 void setSharedMemory();
 
 /**
- * @brief 
+ * @brief Destroys semaphores and frees shared memory
  * 
  */
 void destruct();
@@ -49,31 +40,31 @@ void destruct();
  * 
  * 
  */
-void oxygenGenerator(int NO, int TI);
+void oxygenGenerator(params_t params);
 
 /**
  * @brief Generates hydrogen processes
  * 
  * 
  */
-void hydrogenGenerator(int NH, int TI);
+void hydrogenGenerator(params_t params);
 
 /**
- * @brief 
+ * @brief Oxygen atom run
  * 
  * @param idO ID of oxygen atom
  */
-void oxygenQue(int idO);
+void oxygenQue(params_t params, int idO);
 
 /**
- * @brief 
+ * @brief Hydrogen atom run
  * 
  * @param idH ID of hydrogen atom 
  */
-void hydrogenQue(int idH);
+void hydrogenQue(params_t params, int idH);
 
 /**
  * @brief Creates molecules
  * 
  */
-void bond();
+void bond(params_t params);

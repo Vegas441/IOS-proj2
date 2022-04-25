@@ -19,10 +19,10 @@ int TB_global;
  * @return true 
  * @return false 
  */
-bool argsFormatCheck(int NO, int NH, int TI, int TB) {
-    if(NO < 0 || NH < 0) 
+bool argsFormatCheck(params_t params) {
+    if(params.NO < 0 || params.NH < 0) 
         return false;
-    else if(TI < 0 || TI > 1000 || TB < 0 || TB > 1000)
+    else if(params.TI < 0 || params.TI > 1000 || params.TB < 0 || params.TB > 1000)
         return false;
     else return true;
 } 
@@ -33,15 +33,15 @@ int main(int argc, char* argv[]) {
         exit(1);
     }
 
-    int NO = atoi(argv[1]);
-    int NH = atoi(argv[2]);
-    int TI = atoi(argv[3]);
-    int TB = atoi(argv[4]);
+    params_t params;
 
-    TB_global = TB;
+    params.NO = atoi(argv[1]);
+    params.NH = atoi(argv[2]);
+    params.TI = atoi(argv[3]);
+    params.TB = atoi(argv[4]);
 
     // Check arguments 
-    if(!argsFormatCheck(NO,NH,TI,TB)){
+    if(!argsFormatCheck(params)){
         fprintf(stderr, "error: invalid argument format\n");
         exit(1);
     }
@@ -63,9 +63,9 @@ int main(int argc, char* argv[]) {
             fprintf(stderr, "error: process failure");
             exit(1);
         }else if(gen == 0) {
-            oxygenGenerator(NO,TI);
+            oxygenGenerator(params);
         }else {
-            hydrogenGenerator(NO,TI);
+            hydrogenGenerator(params);
         }
     }else{
         // Parent process

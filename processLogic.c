@@ -8,21 +8,26 @@
 #include <sys/shm.h>
 #include "processLogic.h"
 
+// TODO -> FIXNI MOLEKULOVY INDEX
+
 // Shared variables
 int sh_A = 0;
 int sh_OQue = 0;
 int sh_HQue = 0;
+int sh_OCreated = 0;
+int sh_HCreated = 0;
 int sh_OFinished = 0;
 int sh_HFinished = 0;
-
 int sh_moleculeNumber = 0;
 
 // Pointers to shared memory
-int *A;
-int *OQue;
-int *HQue;
-int *OFinished;
-int *HFinished;
+int *A;                         // Step index
+int *OQue;                      // Oxygen queue counter
+int *HQue;                      // Hydrogen queue counter
+int *OCreated;                  // Number of O atoms created
+int *HCreated;                  // Number of H atoms created
+int *OFinished;                 // Number of O atoms bonded
+int *HFinished;                 // Number of H atoms bonded
 
 int *moleculeNumber;
 
@@ -47,6 +52,8 @@ void setSharedMemory() {
     sh_A = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | IPC_EXCL | 0666);
     sh_OQue = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | IPC_EXCL | 0666);
     sh_HQue = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | IPC_EXCL | 0666);
+    sh_OCreated = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | IPC_EXCL | 0666);
+    sh_HCreated = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | IPC_EXCL | 0666);
     sh_OFinished = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | IPC_EXCL | 0666);
     sh_HFinished = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | IPC_EXCL | 0666);
     sh_moleculeNumber = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | IPC_EXCL | 0666);
@@ -54,14 +61,18 @@ void setSharedMemory() {
     A = (int *) shmat(sh_A, NULL, 0);
     OQue = (int *) shmat(sh_OQue, NULL, 0);
     HQue = (int *) shmat(sh_HQue, NULL, 0);
+    OCreated = (int *) shmat(sh_OCreated, NULL, 0);
+    HCreated = (int *) shmat(sh_HCreated, NULL, 0);
     OFinished = (int *) shmat(sh_OFinished, NULL, 0);
     HFinished = (int *) shmat(sh_HFinished, NULL, 0);
-    moleculeNumber = (int *) shmat(sh_HFinished, NULL, 0);
+    moleculeNumber = (int *) shmat(sh_moleculeNumber, NULL, 0);
 
     
     (*A) = 0;
     (*OQue) = 0;
     (*HQue) = 0;
+    (*OCreated) = 0;
+    (*HCreated) = 0;
     (*OFinished) = 0;
     (*HFinished) = 0;
     (*moleculeNumber) = 0;
@@ -91,6 +102,8 @@ void destruct() {
     shmctl(sh_A, IPC_RMID, NULL);
     shmctl(sh_OQue, IPC_RMID, NULL);
     shmctl(sh_HQue, IPC_RMID, NULL);
+    shmctl(sh_OCreated, IPC_RMID, NULL);
+    shmctl(sh_HCreated, IPC_RMID, NULL);
     shmctl(sh_OFinished, IPC_RMID, NULL);
     shmctl(sh_HFinished, IPC_RMID, NULL);
     shmctl(sh_moleculeNumber, IPC_RMID, NULL);
@@ -99,6 +112,8 @@ void destruct() {
     shmdt(A);
     shmdt(OQue);
     shmdt(HQue);
+    shmdt(OCreated);
+    shmdt(HCreated);
     shmdt(OFinished);
     shmdt(HFinished);
     shmdt(moleculeNumber);
@@ -113,9 +128,9 @@ void destruct() {
 }
 
 
-void oxygenGenerator(int NO, int TI) {
-    pid_t O_children[NO];
-    for(int idO = 1; idO <= NO; idO++) {
+void oxygenGenerator(params_t params) {
+    pid_t O_children[params.NO];
+    for(int idO = 1; idO <= params.NO; idO++) {
         pid_t O = fork();   // Oxygen process
         if(O == -1) {
             fprintf(stderr, "error: process failure");
@@ -124,23 +139,24 @@ void oxygenGenerator(int NO, int TI) {
         else if(O == 0) {
             (*A)++;
             fprintf(out,"%d:\t\tO %d:\t\tstarted\n",*A,idO);
+            (*OCreated)++;
             fflush(out);
-            mysleep(TI);
+            mysleep(params.TI);
             // Go into queue
-            oxygenQue(idO);
+            oxygenQue(params, idO);
             //exit(0);  
         }else O_children[idO-1] = O;
     }
 
-    for(int i = 0; i < NO; i++) {
+    for(int i = 0; i < params.NO; i++) {
         waitpid(O_children[i],NULL,0);
     }
 
 }
 
-void hydrogenGenerator(int NH, int TI) {
-    pid_t H_children[NH];
-    for(int idH = 1; idH <= NH; idH++) {
+void hydrogenGenerator(params_t params) {
+    pid_t H_children[params.NH];
+    for(int idH = 1; idH <= params.NH; idH++) {
         pid_t H = fork();   // Hydrogen process
         if(H == -1) {
             fprintf(stderr, "error: process failure");
@@ -149,23 +165,32 @@ void hydrogenGenerator(int NH, int TI) {
         else if(H == 0) {
             (*A)++;
             fprintf(out,"%d:\t\tH %d:\t\tstarted\n",*A,idH);
+            (*HCreated)++;
             fflush(out);
-            mysleep(TI);
+            mysleep(params.TI);
             // Go into queue
-            hydrogenQue(idH);
+            hydrogenQue(params, idH);
             //exit(0);
         }else H_children[idH-1] = H;
     }
 
-    for(int i = 0; i < NH; i++) {
+    for(int i = 0; i < params.NH; i++) {
         waitpid(H_children[i],NULL,0);
     }
 
 }
 
-void oxygenQue(int idO) {
+void oxygenQue(params_t params, int idO) {
 
     sem_wait(mutex);
+
+    if( (params.NH - (*HFinished) < 2) /* && ((*HQue) < 2) */) {
+        (*A)++;
+        fprintf(out,"%d:\t\tO %d:\t\tnot enough H\n",*A,idO);
+        fflush(out);
+        sem_post(mutex);
+        exit(0);    
+    }
 
     (*A)++;
     fprintf(out,"%d:\t\tO %d:\t\tgoing to queue\n",*A,idO);
@@ -179,31 +204,41 @@ void oxygenQue(int idO) {
         (*OQue)--;
     } else sem_post(mutex);
 
-    /*
-    if((*HFinished) && (*HQue) < 2) {   TODO -> dories
+    sem_wait(OQueSem);
+
+    if( (params.NH - (*HFinished) < 2) /* && ((*HQue) < 2) */) {
         (*A)++;
         fprintf(out,"%d:\t\tO %d:\t\tnot enough H\n",*A,idO);
         fflush(out);
+        sem_post(OQueSem);
         exit(0);    
     }
-    */
 
-    sem_wait(OQueSem);
     (*A)++;
     fprintf(out,"%d:\t\tO %d:\t\tcreating molecule %d\n",*A,idO,(*moleculeNumber)+1);
     fflush(out);
-    bond();
+    bond(params);
     (*A)++;
     fprintf(out,"%d:\t\tO %d:\t\tmolecule %d created\n",*A,idO,*moleculeNumber);
     fflush(out);
     sem_wait(barrier);
     sem_post(mutex);
+    (*OFinished)++;
+    if(params.NO - (*OFinished) < 1) sem_post(HQueSem);
     exit(0);
 }
 
-void hydrogenQue(int idH) {
+void hydrogenQue(params_t params, int idH) {
 
     sem_wait(mutex);
+
+    if( (params.NO - (*OFinished) < 1) /* && ((*OQue) < 1) */) {
+        (*A)++;
+        fprintf(out,"%d:\t\tH %d:\t\tnot enough O\n",*A,idH);
+        fflush(out);
+        sem_post(mutex);
+        exit(0);    
+    }
 
     (*A)++;
     fprintf(out,"%d:\t\tH %d:\t\tgoing to queue\n",*A,idH);
@@ -216,32 +251,34 @@ void hydrogenQue(int idH) {
         sem_post(OQueSem);
         (*OQue)--;
     }else sem_post(mutex);
+    
+    sem_wait(HQueSem);
 
-    /*
-    if((*OFinished) && (*OQue) < 1) {
+    if( (params.NO - (*OFinished) < 1) /* && ((*OQue) < 1) */) {
         (*A)++;
         fprintf(out,"%d:\t\tH %d:\t\tnot enough O\n",*A,idH);
         fflush(out);
+        sem_post(HQueSem);
         exit(0);    
     }
-    */
-    
-    sem_wait(HQueSem);
+
     (*A)++;
     fprintf(out,"%d:\t\tH %d:\t\tcreating molecule %d\n",*A,idH,(*moleculeNumber)+1);
     fflush(out);
-    //bond();
+
     sem_wait(creating);
     (*A)++;
     fprintf(out,"%d:\t\tH %d:\t\tmolecule %d created\n",*A,idH,*moleculeNumber);
     fflush(out);
     sem_wait(barrier);
+    (*HFinished)++;
+    if(params.NH - (*HFinished) < 2) sem_post(OQueSem);
     exit(0);
 }
 
-void bond() {
-    mysleep(TB_global);
+void bond(params_t params) {
+    mysleep(params.TB);
     sem_post(barrier);sem_post(barrier);sem_post(barrier);
-    sem_post(creating);sem_post(creating);//sem_post(creating);
+    sem_post(creating);sem_post(creating);
     (*moleculeNumber)++;
 }
