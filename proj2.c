@@ -7,8 +7,6 @@
 #include <fcntl.h>
 #include "processLogic.h"
 
-int TB_global;
-
 /**
  * @brief Function to check the validity of arguments 
  * 

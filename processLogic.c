@@ -189,6 +189,8 @@ void oxygenQue(params_t params, int idO) {
         fprintf(out,"%d:\t\tO %d:\t\tnot enough H\n",*A,idO);
         fflush(out);
         sem_post(mutex);
+        (*OFinished)++;
+        if(params.NO - (*OFinished) < 1) sem_post(HQueSem);
         exit(0);    
     }
 
@@ -211,6 +213,8 @@ void oxygenQue(params_t params, int idO) {
         fprintf(out,"%d:\t\tO %d:\t\tnot enough H\n",*A,idO);
         fflush(out);
         sem_post(OQueSem);
+        (*OFinished)++;
+        if(params.NO - (*OFinished) < 1) sem_post(HQueSem);
         exit(0);    
     }
 
@@ -237,6 +241,8 @@ void hydrogenQue(params_t params, int idH) {
         fprintf(out,"%d:\t\tH %d:\t\tnot enough O\n",*A,idH);
         fflush(out);
         sem_post(mutex);
+        (*HFinished)++;
+        if(params.NH - (*HFinished) < 2) sem_post(OQueSem);
         exit(0);    
     }
 
@@ -259,6 +265,8 @@ void hydrogenQue(params_t params, int idH) {
         fprintf(out,"%d:\t\tH %d:\t\tnot enough O\n",*A,idH);
         fflush(out);
         sem_post(HQueSem);
+        (*HFinished)++;
+        if(params.NH - (*HFinished) < 2) sem_post(OQueSem);
         exit(0);    
     }
 
