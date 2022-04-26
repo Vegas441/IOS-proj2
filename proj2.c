@@ -31,12 +31,17 @@ int main(int argc, char* argv[]) {
         exit(1);
     }
 
-    params_t params;
+    params_t params; char *param_err = NULL;
 
-    params.NO = atoi(argv[1]);
-    params.NH = atoi(argv[2]);
-    params.TI = atoi(argv[3]);
-    params.TB = atoi(argv[4]);
+    params.NO = strtol(argv[1], &param_err, 10);
+    params.NH = strtol(argv[2], &param_err, 10);
+    params.TI = strtol(argv[3], &param_err, 10);
+    params.TB = strtol(argv[4], &param_err, 10);
+
+    if(*param_err != 0) {
+        fprintf(stderr, "error: invalid argument format\n");
+        exit(1);
+    }
 
     // Check arguments 
     if(!argsFormatCheck(params)){

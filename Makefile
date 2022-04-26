@@ -17,4 +17,4 @@ run:
 	./proj2 20 20 100 100
 
 pack:
-	zip -r proj2.zip *.c Makefile
+	zip -r proj2.zip *.c *.h Makefile
