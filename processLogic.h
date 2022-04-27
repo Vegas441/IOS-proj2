@@ -17,6 +17,17 @@ typedef struct params_t {
     int TB;
 } params_t;
 
+
+/*
+typedef struct barrier_t {
+    sem_t *turnstile;
+    sem_t *turnstile2;
+    sem_t *bar_mutex;
+    int *count;
+    int *n;
+} barrier_t;
+*/
+
 /**
  * @brief Halts process for random amount of time in <0,max> interval
  * 

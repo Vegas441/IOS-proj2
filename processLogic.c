@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <wait.h>
+#include <time.h>
 #include <sys/shm.h>
 #include "processLogic.h"
 
@@ -20,6 +21,10 @@ int sh_OFinished = 0;
 int sh_HFinished = 0;
 int sh_moleculeNumber = 0;
 
+// For barrier
+int sh_bar_count;
+int sh_bar_n;
+
 // Pointers to shared memory
 int *A;                         // Step index
 int *OQue;                      // Oxygen queue counter
@@ -31,13 +36,20 @@ int *HFinished;                 // Number of H atoms bonded
 
 int *moleculeNumber;
 
+int *bar_count;
+int *bar_n;
+
 FILE *out;
 sem_t *OQueSem;
 sem_t *HQueSem;
-sem_t *barrier;
 sem_t *mutex;
-sem_t *creating; 
 sem_t *write_sem;
+
+// Barrier
+sem_t *turnstile;
+sem_t *turnstile2;
+sem_t *bar_mutex; 
+
 
 void mysleep(int max){
     if (max == 0) {
@@ -49,7 +61,7 @@ void mysleep(int max){
 }
 
 void setSharedMemory() {
-    
+
     if ((sh_A = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | IPC_EXCL | 0666))  == -1 ||
         (sh_OQue = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | IPC_EXCL | 0666))  == -1 ||
         (sh_HQue = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | IPC_EXCL | 0666))  == -1 ||
@@ -57,7 +69,9 @@ void setSharedMemory() {
         (sh_HCreated = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | IPC_EXCL | 0666)) == -1 ||
         (sh_OFinished = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | IPC_EXCL | 0666)) == -1 ||
         (sh_HFinished = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | IPC_EXCL | 0666)) == -1 ||
-        (sh_moleculeNumber = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | IPC_EXCL | 0666)) == -1) {
+        (sh_moleculeNumber = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | IPC_EXCL | 0666)) == -1 ||
+        (sh_bar_count = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | IPC_EXCL | 0666)) == -1 ||
+        (sh_bar_n = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | IPC_EXCL | 0666)) == -1) {
             fprintf(stderr,"error: shared memory cannot be created");
             exit(1);
         }
@@ -69,11 +83,12 @@ void setSharedMemory() {
         (HCreated = (int *) shmat(sh_HCreated, NULL, 0)) == NULL ||
         (OFinished = (int *) shmat(sh_OFinished, NULL, 0)) == NULL ||
         (HFinished = (int *) shmat(sh_HFinished, NULL, 0)) == NULL ||
-        (moleculeNumber = (int *) shmat(sh_moleculeNumber, NULL, 0)) == NULL) {
+        (moleculeNumber = (int *) shmat(sh_moleculeNumber, NULL, 0)) == NULL ||
+        (bar_count = (int *) shmat(sh_bar_count, NULL, 0)) == NULL ||
+        (bar_n = (int *) shmat(sh_bar_n, NULL, 0)) == NULL) {
             fprintf(stderr,"error: shared memory cannot be created");
             exit(1);
         }
-
     
     (*A) = 0;
     (*OQue) = 0;
@@ -84,6 +99,9 @@ void setSharedMemory() {
     (*HFinished) = 0;
     (*moleculeNumber) = 0;
 
+    *(bar_count) = 0;
+    *(bar_n) = 3;
+
     if((out = fopen("proj2.out","w")) == NULL) {
         fprintf(stderr,"error: output file cannot be opened");
         exit(1);
@@ -92,17 +110,20 @@ void setSharedMemory() {
 
     MMAP(OQueSem);
     MMAP(HQueSem);
-    MMAP(barrier);
     MMAP(mutex);
-    MMAP(creating);
     MMAP(write_sem);
+
+    MMAP(turnstile);
+    MMAP(turnstile2);
+    MMAP(bar_mutex);
 
     if( sem_init(OQueSem,1,0) == -1 ||
         sem_init(HQueSem,1,0) == -1 ||
-        sem_init(barrier,1,3) == -1 ||
         sem_init(mutex,1,1) == -1 ||
-        sem_init(creating,1,0) == -1 ||
-        sem_init(write_sem,1,1) == -1){
+        sem_init(write_sem,1,1) == -1 ||
+        sem_init(turnstile,1,0) == -1 ||
+        sem_init(turnstile2,1,1) == -1 ||
+        sem_init(bar_mutex,1,1) == -1){
             fprintf(stderr, "error: semaphore initialization failed");
             exit(1);
         }
@@ -120,6 +141,8 @@ void destruct() {
     shmctl(sh_OFinished, IPC_RMID, NULL) == -1 ||
     shmctl(sh_HFinished, IPC_RMID, NULL) == -1 ||
     shmctl(sh_moleculeNumber, IPC_RMID, NULL) == -1 ||
+    shmctl(sh_bar_count, IPC_RMID, NULL) == -1 ||
+    shmctl(sh_bar_n, IPC_RMID, NULL) == -1 ||
     
 
     shmdt(A) == -1 ||
@@ -129,7 +152,9 @@ void destruct() {
     shmdt(HCreated) == -1 ||
     shmdt(OFinished) == -1 ||
     shmdt(HFinished) == -1 ||
-    shmdt(moleculeNumber) == -1) {
+    shmdt(moleculeNumber) == -1 ||  
+    shmdt(bar_count) == -1 ||
+    shmdt(bar_n) == -1) {
         fprintf(stderr, "error: shared memory deallocation failed");
         exit(1);
     }
@@ -140,18 +165,21 @@ void destruct() {
         sem_destroy(OQueSem) == -1 ||
         sem_destroy(HQueSem) == -1 ||
         sem_destroy(mutex) == -1 ||
-        sem_destroy(barrier) == -1 ||
-        sem_destroy(creating) == -1 || 
-        sem_destroy(write_sem) == -1) {
+        sem_destroy(write_sem) == -1 ||
+        sem_destroy(turnstile) == -1 ||
+        sem_destroy(turnstile2) == -1 ||
+        sem_destroy(bar_mutex) == -1) {
             fprintf(stderr, "error: semaphore destruction failed");
             exit(1);
         }
 }
 
-// TODO -> uprav semafor pre tvorbu molekuly (stale hapruju molekulovy index)
-
 void oxygenGenerator(params_t params) {
     pid_t O_children[params.NO];
+
+    // Prevents deadlock when no oxygens are present
+    if(params.NO == 0) sem_post(HQueSem);
+
     for(int idO = 1; idO <= params.NO; idO++) {
         pid_t O = fork();   // Oxygen process
         if(O == -1) {
@@ -159,6 +187,7 @@ void oxygenGenerator(params_t params) {
             exit(1);
         }
         else if(O == 0) {
+            srand(time(NULL)*getpid());
             sem_wait(write_sem);
             (*A)++;
             fprintf(out,"%d: O %d: started\n",*A,idO);
@@ -180,6 +209,10 @@ void oxygenGenerator(params_t params) {
 
 void hydrogenGenerator(params_t params) {
     pid_t H_children[params.NH];
+
+    // Prevents deadlock when no hydrogens are present
+    if(params.NH == 0) sem_post(OQueSem);
+
     for(int idH = 1; idH <= params.NH; idH++) {
         pid_t H = fork();   // Hydrogen process
         if(H == -1) {
@@ -187,6 +220,7 @@ void hydrogenGenerator(params_t params) {
             exit(1);
         }
         else if(H == 0) {
+            srand(time(NULL)*getpid());
             sem_wait(write_sem);
             (*A)++;
             fprintf(out,"%d: H %d: started\n",*A,idH);
@@ -208,7 +242,7 @@ void hydrogenGenerator(params_t params) {
 
 void oxygenQue(params_t params, int idO) {
 
-    sem_wait(mutex);
+    //sem_wait(mutex);
 
     // Prevents deadlock when only 1 of each atoms enter
     if(params.NO == 1 && params.NH == 1) {
@@ -221,6 +255,9 @@ void oxygenQue(params_t params, int idO) {
     fprintf(out,"%d: O %d: going to queue\n",*A,idO);
     fflush(out);
     sem_post(write_sem);
+
+    sem_wait(mutex);
+
     (*OQue)++;
 
     if((*HQue) >= 2) {
@@ -253,12 +290,36 @@ void oxygenQue(params_t params, int idO) {
     sem_post(write_sem);
     bond(params);
 
+    //--- Barrier ---//
+    sem_wait(bar_mutex);
+        (*bar_count) += 1;
+        if((*bar_count) == (*bar_n)) {
+            sem_wait(turnstile2);
+            sem_post(turnstile);
+        }
+    sem_post(bar_mutex);
+
+    sem_wait(turnstile);
+    sem_post(turnstile);
+
+    sem_wait(bar_mutex);
+        (*bar_count) -= 1;
+        if((*bar_count) == 0) {
+            sem_wait(turnstile);
+            sem_post(turnstile2);
+        }
+    sem_post(bar_mutex);
+
+    sem_wait(turnstile2);
+    sem_post(turnstile2);
+    //--- Barrier ---//
+
     sem_wait(write_sem);
     (*A)++;
     fprintf(out,"%d: O %d: molecule %d created\n",*A,idO,*moleculeNumber);
     fflush(out);
     sem_post(write_sem);
-    sem_wait(barrier);
+
     sem_post(mutex);
     (*OFinished)++;
     if(params.NO - (*OFinished) < 1) sem_post(HQueSem);
@@ -267,7 +328,7 @@ void oxygenQue(params_t params, int idO) {
 
 void hydrogenQue(params_t params, int idH) {
 
-    sem_wait(mutex);
+    //sem_wait(mutex);
 
     // Prevents deadlock when only 1 of each atoms enter
     if(params.NO == 1 && params.NH == 1) {
@@ -280,6 +341,9 @@ void hydrogenQue(params_t params, int idH) {
     fprintf(out,"%d: H %d: going to queue\n",*A,idH);
     fflush(out);
     sem_post(write_sem);
+
+    sem_wait(mutex);
+
     (*HQue)++;
 
     if((*HQue) >= 2 && (*OQue) >= 1) {
@@ -311,14 +375,36 @@ void hydrogenQue(params_t params, int idH) {
     fflush(out);
     sem_post(write_sem);
 
-    sem_wait(creating);
+    //--- Barrier ---//
+    sem_wait(bar_mutex);
+        (*bar_count) += 1;
+        if((*bar_count) == (*bar_n)) {
+            sem_wait(turnstile2);
+            sem_post(turnstile);
+        }
+    sem_post(bar_mutex);
+
+    sem_wait(turnstile);
+    sem_post(turnstile);
+
+    sem_wait(bar_mutex);
+        (*bar_count) -= 1;
+        if((*bar_count) == 0) {
+            sem_wait(turnstile);
+            sem_post(turnstile2);
+        }
+    sem_post(bar_mutex);
+
+    sem_wait(turnstile2);
+    sem_post(turnstile2);
+    //--- Barrier ---//
 
     sem_wait(write_sem);
     (*A)++;
     fprintf(out,"%d: H %d: molecule %d created\n",*A,idH,*moleculeNumber);
     fflush(out);
     sem_post(write_sem);
-    sem_wait(barrier);
+
     (*HFinished)++;
     if(params.NH - (*HFinished) < 2) sem_post(OQueSem);
     exit(0);
@@ -326,6 +412,5 @@ void hydrogenQue(params_t params, int idH) {
 
 void bond(params_t params) {
     mysleep(params.TB);
-    sem_post(barrier);sem_post(barrier);sem_post(barrier);
-    sem_post(creating);sem_post(creating);
+    //sem_post(creating);sem_post(creating);
 }

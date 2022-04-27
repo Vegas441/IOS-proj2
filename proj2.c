@@ -59,6 +59,8 @@ int main(int argc, char* argv[]) {
         fprintf(stderr, "error: process failure");
         exit(1);
     }else if(mProc == 0) {
+        oxygenGenerator(params);
+        /*
         // Child process
         pid_t gen = fork();
         if(gen == -1) {
@@ -70,8 +72,12 @@ int main(int argc, char* argv[]) {
         }else {
             hydrogenGenerator(params);
         }
+        */
+       waitpid(mProc,NULL,0);
+       exit(0);
     }else{
         // Parent process
+        hydrogenGenerator(params);
         waitpid(mProc,NULL,0);
         destruct();
         exit(0);
