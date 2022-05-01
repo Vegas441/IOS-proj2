@@ -5,10 +5,36 @@
 #include <wait.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <ctype.h>
 #include "processLogic.h"
 
 /**
- * @brief Function to check the validity of arguments 
+ * @brief Function to determine if argument is a string of digits
+ * Function taken from stackoverflow: 
+ * https://stackoverflow.com/questions/29248585/c-checking-command-line-argument-is-integer-or-not
+ * 
+ * @param number Argument
+ * @return true 
+ * @return false 
+ */
+bool isNumber(char number[])
+{
+    int i = 0;
+
+    // Checking for negative numbers
+    if (number[0] == '-')
+        i = 1;
+    for (; number[i] != 0; i++)
+    {
+        //if (number[i] > '9' || number[i] < '0')
+        if (!isdigit(number[i]))
+            return false;
+    }
+    return true;
+}
+
+/**
+ * @brief Function to check the correct values of arguments 
  * 
  * @param NO Number of oxygen atoms
  * @param NH Number of hydrogen atoms
@@ -17,14 +43,17 @@
  * @return true 
  * @return false 
  */
-bool argsFormatCheck(params_t params) {
-    if(params.NO < 0 || params.NH < 0) 
+bool argsValueCheck(params_t params) {
+    if(params.NO < 1 || params.NH < 1) 
         return false;
     else if(params.TI < 0 || params.TI > 1000 || params.TB < 0 || params.TB > 1000)
         return false;
     else return true;
 } 
 
+//////////////
+//   MAIN
+/////////////
 int main(int argc, char* argv[]) {
     if (argc != 5) {
         fprintf(stderr, "error: invalid number of arguments\ncorrect format: ./proj2 NO NH TI TB\n");
@@ -32,6 +61,12 @@ int main(int argc, char* argv[]) {
     }
 
     params_t params; char *param_err = NULL;
+
+    // Check if arguments are numbers
+    if(!isNumber(argv[1]) || !isNumber(argv[2]) || !isNumber(argv[3]) || !isNumber(argv[4])) {
+        fprintf(stderr, "error: invalid argument format\n");
+        exit(1);
+    }
 
     params.NO = strtol(argv[1], &param_err, 10);
     params.NH = strtol(argv[2], &param_err, 10);
@@ -43,8 +78,8 @@ int main(int argc, char* argv[]) {
         exit(1);
     }
 
-    // Check arguments 
-    if(!argsFormatCheck(params)){
+    // Check correct values of arguments
+    if(!argsValueCheck(params)){
         fprintf(stderr, "error: invalid argument format\n");
         exit(1);
     }
@@ -56,25 +91,13 @@ int main(int argc, char* argv[]) {
     pid_t mProc = fork();
     if(mProc == -1){
         // Error ocurred
-        fprintf(stderr, "error: process failure");
+        fprintf(stderr, "error: main process failure\n");
         exit(1);
     }else if(mProc == 0) {
-        oxygenGenerator(params);
-        /*
         // Child process
-        pid_t gen = fork();
-        if(gen == -1) {
-            // Error ocurred
-            fprintf(stderr, "error: process failure");
-            exit(1);
-        }else if(gen == 0) {
-            oxygenGenerator(params);
-        }else {
-            hydrogenGenerator(params);
-        }
-        */
-       waitpid(mProc,NULL,0);
-       exit(0);
+        oxygenGenerator(params);
+        waitpid(mProc,NULL,0);
+        exit(0);
     }else{
         // Parent process
         hydrogenGenerator(params);
